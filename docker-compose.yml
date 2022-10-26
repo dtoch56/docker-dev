@@ -1,0 +1,117 @@
+services:
+  mysql:
+    container_name: mysql
+    image: percona:${PERCONA_TAG:-8}
+#    build:
+#      context: ./mysql
+#      args:
+#        UID: ${UID:-1001}
+#        GID: ${GID:-1001}
+#    user: ${UID:-1001}:${GID:-1001}
+    command: --default-authentication-plugin=mysql_native_password
+    init: true
+    ports:
+      - ${HOST_IP:-127.0.0.1}:${MYSQL_PORT:-3306}:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      MYSQL_DATABASE: developer
+      MYSQL_USER: developer
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-developer}
+    cap_add:
+      - SYS_NICE  # CAP_SYS_NICE
+    volumes:
+      - ${STORAGE:-/storage/docker-dev}/mysql/data:/var/lib/mysql
+      - ${STORAGE:-/storage/docker-dev}/mysql/db:/var/db
+      - ./mysql/conf.d/dev.conf:/etc/my.cnf.d/dev.cnf
+    working_dir: /var/db
+    networks:
+      dev:
+        aliases:
+          - database.dev.docker
+    hostname: mysql
+    mem_reservation: 512m
+    mem_limit: 5g
+
+  rabbitmq:
+    container_name: rabbitmq
+    image: rabbitmq:management-alpine
+#    build:
+#      context: ./rabbitmq
+#      args:
+#        UID: ${UID:-1001}
+#        GID: ${GID:-1001}
+    init: true
+    ports:
+      - ${HOST_IP:-127.0.0.1}:${RABBITMQ_PORT:-15672}:15672
+    environment:
+      RABBITMQ_DEFAULT_VHOST: /
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-password}
+    volumes:
+      - ${STORAGE:-/storage/docker-dev}/rabbitmq/data:/var/lib/rabbitmq
+    networks:
+      dev:
+        aliases:
+          - rabbitmq.dev.docker
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.rabbitmq.rule=Host(`rabbitmq.docker.loc`)
+      - traefik.http.routers.rabbitmq.tls=true
+      - traefik.http.services.rabbitmq.loadbalancer.server.port=15672
+      - traefik.docker.network=dev
+    hostname: rabbitmq
+    mem_reservation: 512m
+    mem_limit: 2048m
+
+  traefik:
+    container_name: traefik
+    image: traefik:${TRAEFIK_TAG:-v2.9}
+    ports:
+      - ${HOST_IP:-127.0.0.1}:80:80
+      - ${HOST_IP:-127.0.0.1}:443:443
+    networks:
+      - dev
+    labels:
+      # Enable this container to be mapped by traefik
+      # For more information, see: https://docs.traefik.io/providers/docker/#exposedbydefault
+      - "traefik.enable=true"
+      # Use "traefik" router configuration defined into the dynamic config file: ./traefik/config.yml
+      - "traefik.http.routers.traefik=true"
+    volumes:
+      - ./traefik/certs:/certs:ro
+      # Map the static conf into the container
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      # Map the dynamic conf into the container
+      - ./traefik/config.yml:/etc/traefik/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    security_opt:
+      - no-new-privileges:true
+    hostname: traefik
+    mem_reservation: 32m
+    mem_limit: 64m
+
+  mkcert:
+    container_name: mkcert
+    image: aegypius/mkcert-for-nginx-proxy
+    restart: unless-stopped
+    volumes:
+      - ./traefik/certs:/app/certs:rw
+      - ~/.mozilla/firefox:/root/.mozilla/firefox:rw
+      - ~/.pki/nssdb:/root/.pki/nssdb:rw
+      - ${CA_STORE:-/usr/local/share/ca-certificates}:/usr/local/share/ca-certificates
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - dev
+
+
+networks:
+  dev:
+    name: dev
+    driver: bridge
+    driver_opts:
+      com.docker.network.enable_ipv6: "false"
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.18.0.0/16
+          gateway: 172.18.0.1

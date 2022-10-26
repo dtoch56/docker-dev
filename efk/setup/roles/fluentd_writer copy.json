@@ -1,0 +1,33 @@
+{
+  "cluster": [
+    "manage_index_templates",
+    "monitor",
+    "manage_ilm"
+  ],
+  "indices": [
+    {
+      "names": [
+        "logs-generic-default",
+        "fluentd-*",
+        "ecs-fluentd-*"
+      ],
+      "privileges": [
+        "write",
+        "create",
+        "create_index",
+        "manage",
+        "manage_ilm"
+      ]
+    },
+    {
+      "names": [
+        "fluentd",
+        "ecs-fluentd"
+      ],
+      "privileges": [
+        "write",
+        "manage"
+      ]
+    }
+  ]
+}

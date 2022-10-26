@@ -1,0 +1,157 @@
+services:
+  efk_setup:
+    container_name: efk_setup
+    build:
+      context: efk/setup/
+      args:
+        ELASTIC_VERSION: ${ELASTIC_VERSION}
+    init: true
+#    volumes:
+#      - efk_setup:/state:Z
+    environment:
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-}
+      LOGSTASH_INTERNAL_PASSWORD: ${LOGSTASH_INTERNAL_PASSWORD:-}
+      KIBANA_SYSTEM_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:-}
+      FLUENTD_PASSWORD: ${FLUENTD_PASSWORD:-}
+    networks:
+      - efk
+
+  elasticsearch:
+    container_name: elasticsearch
+    build:
+      context: efk/elasticsearch/
+      args:
+        ELASTIC_VERSION: ${ELASTIC_VERSION}
+    volumes:
+      - ./efk/elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro,z
+      - ${STORAGE:-/storage/docker-dev}/elasticsearch/data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      ES_JAVA_OPTS: -Xmx256m -Xms256m
+      # Bootstrap password.
+      # Used to initialize the keystore during the initial startup of
+      # Elasticsearch. Ignored on subsequent runs.
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD:-}
+      # Use single node discovery in order to disable production mode and avoid bootstrap checks.
+      # see: https://www.elastic.co/guide/en/elasticsearch/reference/current/bootstrap-checks.html
+      discovery.type: single-node
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.elastic.rule=Host(`elastic.docker.loc`)
+      - traefik.http.routers.elastic.tls=true
+      - traefik.http.services.elastic.loadbalancer.server.port=9200
+      - traefik.docker.network=dev
+    networks:
+      - efk
+      - dev
+    mem_reservation: 1024m
+    mem_limit: 1024m
+
+  fluentd:
+    container_name: fluentd
+    build: ./efk/fluentd
+    volumes:
+      - ./efk/fluentd/conf:/fluentd/etc
+    depends_on:
+      - elasticsearch
+    networks:
+      efk:
+      dev:
+        aliases:
+          - fluentd.dev.docker
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+    hostname: fluentd.efk
+    mem_reservation: 128m
+    mem_limit: 128m
+
+#  fluentd_ui:
+#    container_name: fluentd_ui
+#    build: ./efk/fluentd-ui
+#    networks:
+#      - efk
+#      - dev
+#    labels:
+#      - traefik.enable=true
+#      - traefik.http.routers.fluentd.rule=Host(`fluentd.docker.loc`)
+#      - traefik.http.routers.fluentd.tls=true
+#      - traefik.http.services.fluentd.loadbalancer.server.port=9292
+#      - traefik.docker.network=dev
+
+  #  fluentbit:
+#    container_name: fluentbit
+#    build: ./efk/fluentbit
+#    volumes:
+#      - ./efk/fluentbit/conf/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
+#      - ./efk/fluentbit/conf/parsers.conf:/fluent-bit/etc/parsers.conf
+#    depends_on:
+#      - elasticsearch
+#    networks:
+#      efk:
+#      dev:
+#        aliases:
+#          - fluentbit.dev.docker
+#    ports:
+#      - "24224:24224"
+#      - "24224:24224/udp"
+#    hostname: fluentbit.efk
+#    mem_reservation: 128m
+#    mem_limit: 128m
+
+  kibana:
+    container_name: kibana
+    build:
+      context: efk/kibana/
+      args:
+        ELASTIC_VERSION: ${ELASTIC_VERSION}
+    volumes:
+      - ./efk/kibana/config/kibana.yml:/usr/share/kibana/config/kibana.yml:ro,Z
+    environment:
+      KIBANA_SYSTEM_PASSWORD: ${KIBANA_SYSTEM_PASSWORD:-}
+    ports:
+      - 5601:5601
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.kibana.rule=Host(`kibana.docker.loc`)
+      - traefik.http.routers.kibana.tls=true
+      - traefik.http.services.kibana.loadbalancer.server.port=5601
+      - traefik.docker.network=dev
+    networks:
+      - efk
+      - dev
+    depends_on:
+      - elasticsearch
+    mem_reservation: 1024m
+    mem_limit: 1024m
+
+
+#  web:
+#    container_name: web
+#    image: httpd
+#    ports:
+#      - "8088:80"
+#    links:
+#      - fluentd
+#    logging:
+#      driver: "fluentd"
+#      options:
+#        fluentd-address: localhost:24224
+#        tag: httpd.access
+#        fluentd-async: "true"
+#        fluentd-buffer-limit: 32
+
+
+networks:
+  efk:
+    name: efk
+    driver: bridge
+    driver_opts:
+      com.docker.network.enable_ipv6: "false"
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.21.0.0/16
+          gateway: 172.21.0.1

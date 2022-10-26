@@ -1,0 +1,22 @@
+http:
+  routers:
+    traefik:
+      rule: "Host(`traefik.docker.loc`)"
+      service: "api@internal"
+      tls:
+        domains:
+          - main: "traefik.docker.loc"
+
+tls:
+  stores:
+    default:
+      defaultCertificate:
+        certFile: "/certs/dev-cert.pem"
+        keyFile: "/certs/dev-key.pem"
+  certificates:
+    - certFile: "/certs/localhost-cert.pem"
+      keyFile: "/certs/localhost-key.pem"
+    - certFile: "/certs/docker-cert.pem"
+      keyFile: "/certs/docker-key.pem"
+    - certFile: "/certs/dev-cert.pem"
+      keyFile: "/certs/dev-key.pem"

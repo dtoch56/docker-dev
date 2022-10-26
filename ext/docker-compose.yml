@@ -1,0 +1,121 @@
+version: '2.4'
+
+services:
+  postgres:
+    container_name: postgres
+    image: postgres:alpine
+    init: true
+#    user: ${UID:-1001}:${GID:-1001}
+    ports:
+      - ${HOST_IP:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_db:/var/db
+      - ./postgres/conf.d/dev.conf:/etc/postgresql/dev.conf
+    working_dir: /var/db
+    networks:
+      dev:
+        aliases:
+          - postgres.dev.docker
+    hostname: postgres
+    mem_reservation: 1g
+    mem_limit: 10g
+
+  mongodb:
+    container_name: mongodb
+    image: mongo:${MONGO_TAG:-4}
+    init: true
+    ports:
+      - ${HOST_IP:-127.0.0.1}:${MONGODB_POST:-27017}:27017
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD:-password}
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      dev:
+        aliases:
+          - mongodb.dev.docker
+    hostname: mongodb
+    mem_reservation: 512m
+    mem_limit: 4g
+
+  etcd:
+    container_name: etcd
+    image: quay.io/coreos/etcd:${ETCD_TAG:-v3.4.15}
+    init: true
+    entrypoint: /usr/local/bin/etcd
+    command:
+      - '--data-dir=/etcd-data'
+      - '--name=node1'
+      - '--initial-advertise-peer-urls=http://etcd:2380'
+      - '--listen-peer-urls=http://0.0.0.0:2380'
+      - '--advertise-client-urls=http://etcd:2379'
+      - '--listen-client-urls=http://0.0.0.0:2379'
+      - '--initial-cluster=node1=http://etcd:2380'
+      - '--initial-cluster-token=rQXm2ZqCWN9s5Qpk5wjrqaF3'
+      - '--heartbeat-interval=250'
+      - '--election-timeout=1250'
+      - '--initial-cluster-state=new'
+    environment:
+      ETCDCTL_API: 3
+    ports:
+      - ${HOST_IP:-127.0.0.1}:2379:2379
+      - ${HOST_IP:-127.0.0.1}:2380:2380
+    volumes:
+      - etcd_data:/etcd-data
+    networks:
+      dev:
+        aliases:
+          - etcd.dev.docker
+
+  portainer:
+    container_name: portainer
+    image: portainer/portainer-ce:${PORTAINER_TAG:-2.15.1-alpine}
+    ports:
+      - ${HOST_IP:-127.0.0.1}:9000:9000
+    networks:
+      - dev
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.portainer.rule=Host(`portainer.docker.loc`)
+      - traefik.http.routers.portainer.tls=true
+      - traefik.http.services.portainer.loadbalancer.server.port=9000
+      - traefik.docker.network=dev
+    volumes:
+      - portainer_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    hostname: portainer
+    mem_reservation: 64m
+    mem_limit: 512m
+
+volumes:
+  postgres_data:
+    driver_opts:
+      type: none
+      o: bind
+      device: "${STORAGE:-/storage/docker-dev}/postgres/data"
+  postgres_db:
+    driver_opts:
+      type: none
+      o: bind
+      device: "${STORAGE:-/storage/docker-dev}/postgres/db"
+  mongodb_data:
+    driver_opts:
+      type: none
+      o: bind
+      device: "${STORAGE:-/storage/docker-dev}/mongodb/data"
+  etcd_data:
+    driver_opts:
+      type: none
+      o: bind
+      device: "${STORAGE:-/storage/docker-dev}/etcd/data"
+  portainer_data:
+    driver_opts:
+      type: none
+      o: bind
+      device: "${STORAGE:-/storage/docker-dev}/portainer/data"

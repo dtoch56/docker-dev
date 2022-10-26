@@ -1,0 +1,132 @@
+version: '2.4'
+
+services:
+  mysql:
+    container_name: mysql
+    image: percona:8
+#    build:
+#      context: ./mysql
+#      args:
+#        UID: ${UID:-1001}
+#        GID: ${GID:-1001}
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    init: true
+    ports:
+      - ${HOST_IP:-127.0.0.1}::${MYSQL_PORT:-3306}:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+#    user: "${UID:-1001}:${GID:-1001}"
+    cap_add:
+      - SYS_NICE  # CAP_SYS_NICE
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - mysql_db:/var/db
+      - ./mysql/conf.d/test.conf:/etc/my.cnf.d/test.cnf
+    working_dir: /var/db
+    networks:
+      dev:
+        aliases:
+          - database.dev.docker
+          - ${DATABASE_HOST:-database.dev.test}
+    hostname: mysql
+    mem_reservation: 1g
+    mem_limit: 12g
+
+  xtrabackup:
+    container_name: xtrabackup
+    build:
+      context: ./xtrabackup
+    working_dir: /mnt/mysql_backup/script/
+    volumes:
+      - /mnt/mysql_backup:/mnt/mysql_backup
+    hostname: xtrabackup
+    mem_reservation: 1g
+    mem_limit: 12g
+
+  mongodb:
+    container_name: mongodb
+    image: mongo:4
+    init: true
+    restart: always
+    ports:
+      - ${HOST_IP:-127.0.0.1}::${MONGODB_POST:-27017}:27017
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD}
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      dev:
+        aliases:
+          - mongodb.dev.docker
+    hostname: mongodb
+    mem_reservation: 512m
+    mem_limit: 4g
+
+  rabbitmq:
+    container_name: rabbitmq
+    image: rabbitmq:management-alpine
+#    build:
+#      context: ./rabbitmq
+#      args:
+#        UID: ${UID:-1001}
+#        GID: ${GID:-1001}
+    restart: always
+    init: true
+    ports:
+      - ${HOST_IP:-127.0.0.1}::5672:5672
+      - ${HOST_IP:-127.0.0.1}::${RABBITMQ_PORT:-15672}:15672
+    environment:
+      RABBITMQ_DEFAULT_VHOST: /
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-developer}
+#    user: "${UID:-1001}:${GID:-1001}"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      dev:
+        aliases:
+          - rabbitmq.dev.docker
+    hostname: rabbitmq
+    mem_reservation: 64m
+    mem_limit: 512m
+
+
+networks:
+  dev:
+    name: dev
+    driver: bridge
+    driver_opts:
+      com.docker.network.enable_ipv6: "false"
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
+
+volumes:
+  mysql_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${STORAGE:-/storage/docker-dev}/mysql/data"
+  mysql_db:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${STORAGE:-/storage/docker-dev}/mysql/db"
+  mongodb_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${STORAGE:-/storage/docker-dev}/mongodb/data"
+  rabbitmq_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${STORAGE:-/storage/docker-dev}/rabbitmq/data"
